@@ -6,7 +6,7 @@
 ## Overview
 The package provides a workable way to upscale huge categorical map using area preserving method. It can ensure both the compositional information and landscape characteristics.
 
-For a small map, it might be less efficient. And you can use package [resample](https://github.com/mikejohnson51/resample).
+For a small map, it might be less efficient. And you can use the original package [resample](https://github.com/mikejohnson51/resample).
 
 ## Installation
 You can install the development version from GitHub with:

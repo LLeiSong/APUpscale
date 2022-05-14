@@ -14,7 +14,8 @@ Imports:
     checkmate,
     terra,
     parallel,
-    raster
+    raster,
+    rgdal
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.2
