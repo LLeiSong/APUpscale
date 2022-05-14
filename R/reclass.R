@@ -3,12 +3,21 @@
 #' @param input (SpatRaster) an input terra raster to resample
 #' @param output (SpatRaster) the output grid to resample to
 #' @param nthread (integer) the number of thread to use for parallel.
-#' Default to `parallel::detectCores()`.
-#' @importFrom terra resample values
-#' @importFrom raster raster crop
+#' Default to \code{\link{detectCores}}.
+#' @importFrom terra resample values<- freq ncell values
+#' @importFrom raster raster crop ncell
 #' @importFrom parallel mclapply detectCores
+#' @importFrom stats na.omit
 #' @return (SpatRaster) the target terra raster
 #' @export
+#' @examples
+#' library(APUpscale)
+#' library(terra)
+#' nlcd <- rast(system.file('extdata/nlcd_dukes.tif', package = "APUpscale"))
+#' output <- rast(ext(nlcd), crs = crs(nlcd), resolution = 1000)
+#' lc_coarse <- reclass(nlcd, output, nthread = 2)
+#' coltab(lc_coarse) <- coltab(nlcd)
+#' plot(lc_coarse)
 
 reclass <- function(input, output, nthread = detectCores()){
 

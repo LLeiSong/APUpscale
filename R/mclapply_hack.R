@@ -10,7 +10,15 @@
 #' on Windows machines.
 #' @param ... Any inputs works for `makeCluster`.
 #' @importFrom parallel makeCluster clusterExport parLapply stopCluster
+#' @importFrom utils sessionInfo
 #' @export
+#' @examples
+#' library(APUpscale)
+#' library(parallel)
+#' mclapply <- switch( Sys.info()[['sysname']],
+#'                     Windows = {mclapply_hack},
+#'                     Linux   = {mclapply},
+#'                     Darwin  = {mclapply})
 
 
 ## Define the hack
@@ -35,13 +43,13 @@ mclapply_hack <- function(...) {
       this.env <- environment()
       while (identical(this.env, globalenv()) == FALSE) {
         clusterExport(cl,
-          ls(all.names = TRUE, env = this.env),
+          ls(all.names = TRUE, envir = this.env),
           envir = this.env
         )
         this.env <- parent.env(environment())
       }
       clusterExport(cl,
-        ls(all.names = TRUE, env = globalenv()),
+        ls(all.names = TRUE, envir = globalenv()),
         envir = globalenv()
       )
 

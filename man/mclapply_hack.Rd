@@ -13,3 +13,11 @@ mclapply_hack(...)
 A script to implement a hackish version of parallel:mclapply()
 on Windows machines.
 }
+\examples{
+library(APUpscale)
+library(parallel)
+mclapply <- switch( Sys.info()[['sysname']],
+                    Windows = {mclapply_hack},
+                    Linux   = {mclapply},
+                    Darwin  = {mclapply})
+}

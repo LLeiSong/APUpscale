@@ -12,11 +12,20 @@ reclass(input, output, nthread = detectCores())
 \item{output}{(SpatRaster) the output grid to resample to}
 
 \item{nthread}{(integer) the number of thread to use for parallel.
-Default to \code{parallel::detectCores()}.}
+Default to \code{\link{detectCores}}.}
 }
 \value{
 (SpatRaster) the target terra raster
 }
 \description{
 re-class the base map to the target map
+}
+\examples{
+library(APUpscale)
+library(terra)
+nlcd <- rast(system.file('extdata/nlcd_dukes.tif', package = "APUpscale"))
+output <- rast(ext(nlcd), crs = crs(nlcd), resolution = 1000)
+lc_coarse <- reclass(nlcd, output, nthread = 2)
+coltab(lc_coarse) <- coltab(nlcd)
+plot(lc_coarse)
 }

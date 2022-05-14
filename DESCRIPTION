@@ -5,7 +5,7 @@ Authors@R:
     person("Lei", "Song", , "lsong@clarku.edu", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0002-4371-1473"))
 Description: A package to upscale huge categorical map with area preserving method proposed by Johnson, J. Michael, and Keith C. Clarke (2021) <doi:10.1080/15230406.2021.1892531>.
-License: `use_mit_license()`
+License: MIT + file LICENSE
 URL: https://github.com/LLeiSong/APUpscale
 BugReports: https://github.com/LLeiSong/APUpscale/issues
 Depends: 
@@ -18,3 +18,4 @@ Imports:
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.2
+LazyData: true

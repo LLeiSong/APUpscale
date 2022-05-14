@@ -15,7 +15,7 @@ output target grid.}
 \item{no_data}{(integer) a value to be treated as NO_DATA. Default to NA.}
 
 \item{nthread}{(integer) the number of thread to use for parallel.
-Default to \code{parallel::detectCores()}.}
+Default to \code{\link{detectCores}}.}
 }
 \value{
 (SpatRaster) a resampled terra raster
@@ -23,4 +23,12 @@ Default to \code{parallel::detectCores()}.}
 \description{
 upscale an input raster to an output grid
 using an area preserving method
+}
+\examples{
+library(APUpscale)
+library(terra)
+nlcd <- rast(system.file('extdata/nlcd_dukes.tif', package = "APUpscale"))
+lc_coarse <- upscale(nlcd, cellsize = 1000, nthread = 2)
+coltab(lc_coarse) <- coltab(nlcd)
+plot(lc_coarse)
 }

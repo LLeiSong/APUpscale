@@ -6,12 +6,19 @@
 #' output target grid.
 #' @param no_data (integer) a value to be treated as NO_DATA. Default to NA.
 #' @param nthread (integer) the number of thread to use for parallel.
-#' Default to `parallel::detectCores()`.
-#' @importFrom terra rast writeRaster
+#' Default to \code{\link{detectCores}}.
+#' @importFrom terra rast writeRaster ext crs classify res values
 #' @importFrom parallel detectCores
 #'
 #' @return (SpatRaster) a resampled terra raster
 #' @export
+#' @examples
+#' library(APUpscale)
+#' library(terra)
+#' nlcd <- rast(system.file('extdata/nlcd_dukes.tif', package = "APUpscale"))
+#' lc_coarse <- upscale(nlcd, cellsize = 1000, nthread = 2)
+#' coltab(lc_coarse) <- coltab(nlcd)
+#' plot(lc_coarse)
 
 upscale <- function(input, cellsize,
                     no_data = NA,
