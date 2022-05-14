@@ -29,8 +29,12 @@
 ## Define the hack
 mclapply_hack <- function(X, FUN, ...) {
   ## Create a cluster
-  if (!"mc.cores" %in% list(...) | is.null(mc.cores)) {
+  if (!"mc.cores" %in% list(...)) {
     mc.cores <- min(length(X), detectCores())
+  } else {
+    if (is.null(mc.cores)) {
+      mc.cores <- min(length(X), detectCores())
+    }
   }
   cl <- makeCluster(mc.cores)
 
