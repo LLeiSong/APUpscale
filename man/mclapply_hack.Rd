@@ -4,9 +4,13 @@
 \alias{mclapply_hack}
 \title{Windows version of parallel apply function to use}
 \usage{
-mclapply_hack(...)
+mclapply_hack(X, FUN, ...)
 }
 \arguments{
+\item{X}{(vector (atomic or list)) the vector to loop on.}
+
+\item{FUN}{the function to be applied to each element of \code{X} in parallel to.}
+
 \item{...}{Any inputs works for \code{makeCluster}.}
 }
 \description{
