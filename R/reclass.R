@@ -100,6 +100,8 @@ reclass <- function(input, output, nthread = NULL){
   # Calculate how many tiles to make
   num_tiles <- ceiling(mem_need / floor(mem_avail / nthread))
   num_factor <- floor(sqrt(ncell(output) / num_tiles))
+  # The map would be too huge
+  if (num_factor <= 0) num_factor <- 1
 
   # Split raster to tiles
   temp_dir <- file.path(tempdir(), 'tiles')
@@ -110,7 +112,7 @@ reclass <- function(input, output, nthread = NULL){
     output, template,
     filename = file.path(temp_dir, 'output_.tif'))
   input_tiles <- makeTiles(
-    input, aggregate(output, fact = num_factor),
+    input, template,
     filename = file.path(temp_dir, 'input_.tif'))
   rm(num_tiles, num_factor, mem_need, mem_avail)
   rm(input, output, template); free_RAM(); gc()
@@ -191,12 +193,13 @@ reclass <- function(input, output, nthread = NULL){
   free_RAM(); gc()
 
   # Reshape the result to tiles
-  target_cats <- lapply(seq_along(ids_in_group), function(n) {
+  target_cats <- mclapply(seq_along(ids_in_group), function(n) {
     inds <- ids_in_group[[n]]
     n_row <- n_row_cols[[n]][1]
     n_col <- n_row_cols[[n]][2]
     matrix(areal_per$cat[inds], nrow = n_row, ncol = n_col, byrow = TRUE)
-  }); rm(areal_per, ids_in_group, n_row_cols)
+  }, mc.cores = min(length(ids_in_group), nthread))
+  rm(areal_per, ids_in_group, n_row_cols)
   unlink(temp_dir, recursive = TRUE)
 
   # Mosaic the matrices
