@@ -4,22 +4,32 @@
 #' @param output (SpatRaster) the output grid to resample to
 #' @param nthread (integer) the number of thread to use for parallel.
 #' Default to \code{\link{detectCores}}.
-#' @importFrom terra resample values<- freq ncell values
-#' @importFrom raster raster crop ncell
+#' @importFrom terra resample values<- freq ncell values aggregate makeTiles free_RAM zonal
 #' @importFrom parallel mclapply detectCores
 #' @importFrom stats na.omit
-#' @return (SpatRaster) the target terra raster
+#' @importFrom utils getFromNamespace
+#' @return (matrix) the categorical matrix of target terra raster
 #' @export
 #' @examples
 #' library(APUpscale)
 #' library(terra)
 #' nlcd <- rast(system.file('extdata/nlcd_dukes.tif', package = "APUpscale"))
-#' output <- rast(ext(nlcd), crs = crs(nlcd), resolution = 1000)
-#' lc_coarse <- reclass(nlcd, output, nthread = 2)
-#' coltab(lc_coarse) <- coltab(nlcd)
-#' plot(lc_coarse)
+#' output <- rast(ext(nlcd), crs = crs(nlcd), resolution = 1000, vals = NA)
+#' target_vals <- reclass(nlcd, output, nthread = 2)
+#' values(output) <- target_vals
+#' coltab(output) <- coltab(nlcd)
+#' plot(output)
 
-reclass <- function(input, output, nthread = detectCores()){
+reclass <- function(input, output, nthread = NULL){
+
+  # Check inputs
+  checkmate::assert_class(input, 'SpatRaster', null.ok = FALSE)
+  checkmate::assert_class(output, 'SpatRaster', null.ok = FALSE)
+  checkmate::assert_int(nthread, null.ok = TRUE)
+
+  # Adjust number of threads to use
+  if (is.null(nthread)) nthread <- detectCores()
+  nthread <- min(nthread, detectCores())
 
   # Remove levels if any
   levels(input) <- NULL
@@ -33,7 +43,7 @@ reclass <- function(input, output, nthread = detectCores()){
   # Get expected number of NAs in output
   fname <- tempfile(fileext = '.tif')
   num_vals_output <- freq(resample(input, output, method = 'near',
-                                   filename = fname,
+                                   filename = fname, overwrite = TRUE,
                                    wopt = list(gdal=c("COMPRESS=LZW"))),
                           value = NA)[[1, 'count']]
   file.remove(fname)
@@ -68,20 +78,9 @@ reclass <- function(input, output, nthread = detectCores()){
       freqs <- merge(data.frame(class = classes),
                      freqs, by = 'class', all = TRUE)
       freqs <- freqs[match(classes, freqs$class), ]
-      as.integer(round(freqs$freq / length(x) * 1000))
+      as.integer(round(freqs$freq / length(x) * 10000))
     }
   }
-
-  ###################### Terra way #####################
-  # # Overlay the base and target map
-  # zones <- output; values(zones) <- 1:ncell(zones)
-  # fname <- tempfile(fileext = '.tif')
-  # zones <- resample(zones, input, method = 'near',
-  #                   filename = fname,
-  #                   wopt = list(gdal=c("COMPRESS=LZW")))
-  # cn <- zonal(input, zones, fun = function(x) list(x))
-  # names(cn) <- c('id', 'input')
-  # file.remove(fname); rm(zones, fname)
 
   ## Do parallel according to operation platform
   mclapply <- switch( Sys.info()[['sysname']],
@@ -89,34 +88,72 @@ reclass <- function(input, output, nthread = detectCores()){
                       Linux   = {mclapply},
                       Darwin  = {mclapply})
 
-  # Convert to use raster and do paralleling calculation
-  ## Workable for super large map
-  input <- raster(input)
-  output <- raster(output)
-  n_rows <- nrow(output)
-  n_cols <- ncol(output)
-  n_cells <- ncell(output)
+  # Check memory
+  opt <- utils::getFromNamespace("spatOptions", "terra")()
+  opt$ncopies <- 1
+  mem_need <- (input@ptr$mem_needs(opt)[1] +
+                 output@ptr$mem_needs(opt)[1]) / (1024^3 / 8)
+  mem_avail <- input@ptr$mem_needs(opt)[3] *
+    input@ptr$mem_needs(opt)[2] / (1024^3 / 8)
+  rm(opt)
 
-  # Group by Output object and cell value, count, and determine percentage
-  areal_per <- do.call(
-    rbind, lapply(1:n_rows, function(n_row) {
-    do.call(rbind, mclapply(1:n_cols, function(n_col) {
-      piece <- crop(input,
-                    output[n_row, n_col, drop = FALSE],
-                    snap = 'out', mask = TRUE)
-      vals <- values(piece)
-      props <- get_proportion(vals, count$value)
+  # Calculate how many tiles to make
+  num_tiles <- ceiling(mem_need / floor(mem_avail / nthread))
+  num_factor <- floor(sqrt(ncell(output) / num_tiles))
+
+  # Split raster to tiles
+  temp_dir <- file.path(tempdir(), 'tiles')
+  if (!dir.exists(temp_dir)) dir.create(temp_dir)
+  template <- aggregate(output, fact = num_factor)
+  dims_out <- c(nrow(template), ncol(template))
+  output_tiles <- makeTiles(
+    output, template,
+    filename = file.path(temp_dir, 'output_.tif'))
+  input_tiles <- makeTiles(
+    input, aggregate(output, fact = num_factor),
+    filename = file.path(temp_dir, 'input_.tif'))
+  rm(num_tiles, num_factor, mem_need, mem_avail)
+  rm(input, output, template); free_RAM(); gc()
+
+  # Calculate
+  areal_per <- mclapply(1:length(output_tiles), function(n) {
+    # # Overlay the base and target map
+    base_map <- rast(input_tiles[n])
+    zones <- rast(output_tiles[n])
+    n_row <- nrow(zones); n_col <- ncol(zones)
+    values(zones) <- 1:ncell(zones)
+    fname <- tempfile(fileext = '.tif')
+    zones <- resample(zones, base_map, method = 'near',
+                      filename = fname,
+                      wopt = list(gdal=c("COMPRESS=LZW")))
+    cn <- zonal(base_map, zones, fun = function(x) list(x))
+    names(cn) <- c('id', 'input')
+    file.remove(fname); rm(zones, fname, base_map)
+    free_RAM(); gc()
+
+    areal_per_blk <- do.call(rbind, mclapply(1:nrow(cn), function(n) {
+      props <- get_proportion(cn[[n, 'input']], count$value)
       dt <- data.frame(t(props))
       names(dt) <- count$value
-      dt$id <- n_col + (n_row - 1) * n_cols
+      dt$id <- cn[n, ]$id
       dt[, c('id', count$value)]
     }, mc.cores = nthread))
-  })); rm(n_rows, n_cols, n_cells)
 
-  # Re-class the target pixels
-  ## Fill all cells with 100% of one class with that class
-  inds <- apply(areal_per[, -1] == 1000, 1, match, x = TRUE)
-  areal_per$cat <- count$value[inds]; rm(inds)
+    inds <- apply(areal_per_blk[, -1] == 10000, 1, match, x = TRUE)
+    areal_per_blk$cat <- count$value[inds]; rm(inds)
+    list(areal_per_blk, c(n_row, n_col))
+  }, mc.cores = min(length(output_tiles), nthread))
+
+  # Get the ncell of each tile and rbind all pixels together
+  ncell_tiles <- sapply(areal_per, function(x) nrow(x[[1]]))
+  groups <- letters[seq_along(ncell_tiles)]
+  groups <- unlist(lapply(seq_along(ncell_tiles), function(n) {
+    rep(groups[n], ncell_tiles[n])}))
+  n_row_cols <- lapply(areal_per, function(x) x[[2]])
+  areal_per <- do.call(
+    rbind, lapply(areal_per, function(x) x[[1]]))
+  ids_in_group <- split(1:nrow(areal_per), groups)
+  rm(ncell_tiles, groups)
 
   # Pick pixels in target map for classes
   for (class_id in count$value) {
@@ -132,21 +169,41 @@ reclass <- function(input, output, nthread = detectCores()){
     per_this_class[which(!is.na(areal_per$cat))] <- NA
     # Remove pixels with less than 10% to be this class
     # to reduce calculation
-    per_this_class[per_this_class <= 100] <- NA
+    per_this_class[per_this_class <= 1000] <- NA
 
     # Pick up num_to_fill of pixels with the most coverage to assign class
     num_to_fill <- min(num_to_fill, sum(!is.na(per_this_class)))
-    inds_to_fill <- order(per_this_class, decreasing = T)[1:num_to_fill]
-    areal_per$cat[inds_to_fill]= as.integer(class_id)
+    if (num_to_fill > 0) {
+      inds_to_fill <- order(per_this_class, decreasing = T)[1:num_to_fill]
+      areal_per$cat[inds_to_fill]= as.integer(class_id)}
   }
+
+  # If a cell is unassigned, implement a majority rule
+  areal_per$cat <- ifelse(
+    is.na(areal_per$cat) &
+      !is.na(rowSums(areal_per[, -c(1, ncol(areal_per))])),
+         as.numeric(colnames(areal_per[, -c(1, ncol(areal_per))])[
+           apply(areal_per[, -c(1, ncol(areal_per))], 1, which.max)]),
+         as.numeric(areal_per$cat))
+
   # Clean up
   rm(num_to_fill, per_this_class, inds_to_fill)
+  free_RAM(); gc()
 
-  # Clean up and return
-  output <- rast(output)
-  values(output) <- areal_per$cat
+  # Reshape the result to tiles
+  target_cats <- lapply(seq_along(ids_in_group), function(n) {
+    inds <- ids_in_group[[n]]
+    n_row <- n_row_cols[[n]][1]
+    n_col <- n_row_cols[[n]][2]
+    matrix(areal_per$cat[inds], nrow = n_row, ncol = n_col, byrow = TRUE)
+  }); rm(areal_per, ids_in_group, n_row_cols)
+  unlink(temp_dir, recursive = TRUE)
 
-  output
+  # Mosaic the matrices
+  ids_to_rbind <- 1:length(target_cats) %% dims_out[2]
+  do.call(cbind, mclapply(unique(ids_to_rbind), function(n) {
+    do.call(rbind, target_cats[which(ids_to_rbind == n)])
+  }, mc.cores = min(length(unique(ids_to_rbind)), nthread)))
 }
 
 # end reclass

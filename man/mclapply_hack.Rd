@@ -4,7 +4,7 @@
 \alias{mclapply_hack}
 \title{Windows version of parallel apply function to use}
 \usage{
-mclapply_hack(X, FUN, ...)
+mclapply_hack(X, FUN, ..., mc.cores = NULL)
 }
 \arguments{
 \item{X}{(vector (atomic or list)) the vector to loop on.}
@@ -12,6 +12,8 @@ mclapply_hack(X, FUN, ...)
 \item{FUN}{the function to be applied to each element of \code{X} in parallel to.}
 
 \item{...}{Any inputs works for \code{makeCluster}.}
+
+\item{mc.cores}{(integer) see details in \code{\link{makeCluster}}.}
 }
 \description{
 A script to implement a hackish version of parallel:mclapply()

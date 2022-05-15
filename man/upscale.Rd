@@ -4,7 +4,7 @@
 \alias{upscale}
 \title{upscale}
 \usage{
-upscale(input, cellsize, no_data = NA, nthread = detectCores())
+upscale(input, cellsize, no_data = NA, nthread = NULL)
 }
 \arguments{
 \item{input}{(SpatRaster) a terra raster with fine resolution}

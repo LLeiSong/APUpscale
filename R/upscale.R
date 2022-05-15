@@ -22,7 +22,7 @@
 
 upscale <- function(input, cellsize,
                     no_data = NA,
-                    nthread = detectCores()){
+                    nthread = NULL){
   # Check inputs
   checkmate::assert_class(input, 'SpatRaster', null.ok = FALSE)
   checkmate::assert_number(cellsize,
@@ -33,29 +33,39 @@ upscale <- function(input, cellsize,
     warning(sprintf('%s is not a integral factor of original resolution.',
                     cellsize))}
   checkmate::assert_number(no_data, na.ok = TRUE)
+  checkmate::assert_int(nthread, null.ok = TRUE)
+
+  # Adjust number of threads to use
+  if (is.null(nthread)) nthread <- detectCores()
+  nthread <- min(nthread, detectCores())
 
   # Make the output raster template
-  output <- rast(ext(input), crs = crs(input), resolution = cellsize)
+  output <- rast(ext(input), crs = crs(input),
+                 resolution = cellsize,
+                 vals = NA)
 
   # Set no_data to NA for convenience
   if (!is.na(no_data)) {
     input <- classify(input, cbind(no_data, NA),
                       filetype = 'GTiff',
+                      overwrite = TRUE,
                       gdal = c("COMPRESS=LZW"))}
 
   # Summarize the output cells
-  target_map <- reclass(input,
-                        output = output,
-                        nthread = nthread)
+  target_vals <- reclass(input,
+                         output = output,
+                         nthread = nthread)
+  values(output) <- target_vals
 
   # Set NA back to no_data
   if (!is.na(no_data)) {
-    target_map <- classify(target_map, cbind(NA, no_data),
+    output <- classify(output, cbind(NA, no_data),
                       filetype = 'GTiff',
+                      overwrite = TRUE,
                       gdal = c("COMPRESS=LZW"))}
 
   # Return
-  target_map
+  output
 }
 
 # end upscale

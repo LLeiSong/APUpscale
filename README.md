@@ -20,9 +20,10 @@ devtools::install_github("LLeiSong/APUpscale")
 
 ```{r}
 library(APUpscale)
-data("nlcd_worcester")
-lc_coarse <- upscale(nlcd_worcester, cellsize = 1000)
-coltab(lc_coarse) <- coltab(nlcd_worcester)
+library(terra)
+nlcd <- rast(system.file('extdata/nlcd_dukes.tif', package = "APUpscale"))
+lc_coarse <- upscale(nlcd, cellsize = 1000, nthread = 2)
+coltab(lc_coarse) <- coltab(nlcd)
 plot(lc_coarse)
 ```
 

@@ -4,7 +4,7 @@
 \alias{reclass}
 \title{Re-class the target map}
 \usage{
-reclass(input, output, nthread = detectCores())
+reclass(input, output, nthread = NULL)
 }
 \arguments{
 \item{input}{(SpatRaster) an input terra raster to resample}
@@ -15,7 +15,7 @@ reclass(input, output, nthread = detectCores())
 Default to \code{\link{detectCores}}.}
 }
 \value{
-(SpatRaster) the target terra raster
+(matrix) the categorical matrix of target terra raster
 }
 \description{
 re-class the base map to the target map
@@ -24,8 +24,9 @@ re-class the base map to the target map
 library(APUpscale)
 library(terra)
 nlcd <- rast(system.file('extdata/nlcd_dukes.tif', package = "APUpscale"))
-output <- rast(ext(nlcd), crs = crs(nlcd), resolution = 1000)
-lc_coarse <- reclass(nlcd, output, nthread = 2)
-coltab(lc_coarse) <- coltab(nlcd)
-plot(lc_coarse)
+output <- rast(ext(nlcd), crs = crs(nlcd), resolution = 1000, vals = NA)
+target_vals <- reclass(nlcd, output, nthread = 2)
+values(output) <- target_vals
+coltab(output) <- coltab(nlcd)
+plot(output)
 }

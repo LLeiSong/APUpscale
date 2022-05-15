@@ -14,6 +14,7 @@
 #' @param X (vector (atomic or list)) the vector to loop on.
 #' @param FUN the function to be applied to each element of `X` in parallel to.
 #' @param ... Any inputs works for `makeCluster`.
+#' @param mc.cores (integer) see details in \code{\link{makeCluster}}.
 #' @importFrom parallel makeCluster clusterExport parLapply stopCluster
 #' @importFrom utils sessionInfo
 #' @export
@@ -27,14 +28,11 @@
 
 
 ## Define the hack
-mclapply_hack <- function(X, FUN, ...) {
+mclapply_hack <- function(X, FUN, ...,
+                          mc.cores = NULL) {
   ## Create a cluster
-  if (!"mc.cores" %in% list(...)) {
+  if (is.null(mc.cores)) {
     mc.cores <- min(length(X), detectCores())
-  } else {
-    if (is.null(mc.cores)) {
-      mc.cores <- min(length(X), detectCores())
-    }
   }
   cl <- makeCluster(mc.cores)
 
