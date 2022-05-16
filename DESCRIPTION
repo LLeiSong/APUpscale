@@ -1,6 +1,6 @@
 Package: APUpscale
 Title: Workable Way to Upscale Huge Categorical Map using an Area Preserving Method
-Version: 0.0.1.1
+Version: 0.0.1.2
 Authors@R: 
     person(given = "Lei",
     family = "Song",
