@@ -3,8 +3,10 @@
 #' @param input (SpatRaster) an input terra raster to resample
 #' @param output (SpatRaster) the output grid to resample to
 #' @param nthread (integer) the number of thread to use for parallel.
-#' Default to \code{\link{detectCores}}.
-#' @importFrom terra resample values<- freq ncell values aggregate makeTiles free_RAM zonal
+#' Default to `NULL`. It is recommended to use small ones to
+#' take full advantage of `terra`, for instance 2, 4.
+#' @importFrom terra resample values<- freq ncell values
+#' aggregate makeTiles free_RAM zonal
 #' @importFrom parallel mclapply detectCores
 #' @importFrom stats na.omit
 #' @importFrom utils getFromNamespace
@@ -91,8 +93,7 @@ reclass <- function(input, output, nthread = NULL){
   # Check memory
   opt <- utils::getFromNamespace("spatOptions", "terra")()
   opt$ncopies <- 1
-  mem_need <- (input@ptr$mem_needs(opt)[1] +
-                 output@ptr$mem_needs(opt)[1]) / (1024^3 / 8)
+  mem_need <- (input@ptr$mem_needs(opt)[1] * 4) / (1024^3 / 8)
   mem_avail <- input@ptr$mem_needs(opt)[3] *
     input@ptr$mem_needs(opt)[2] / (1024^3 / 8)
   rm(opt)
@@ -100,8 +101,8 @@ reclass <- function(input, output, nthread = NULL){
   # Calculate how many tiles to make
   num_tiles <- ceiling(mem_need / floor(mem_avail / nthread))
   num_factor <- floor(sqrt(ncell(output) / num_tiles))
-  # The map would be too huge
-  if (num_factor <= 0) num_factor <- 1
+  # The map would be too huge, just give it a try
+  if (num_factor <= 1) num_factor <- 2
 
   # Split raster to tiles
   temp_dir <- file.path(tempdir(), 'tiles')

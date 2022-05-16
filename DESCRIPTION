@@ -1,5 +1,5 @@
 Package: APUpscale
-Title: Workable way to upscale huge categorical map using an area preserving method
+Title: Workable Way to Upscale Huge Categorical Map using an Area Preserving Method
 Version: 0.0.1.1
 Authors@R: 
     person(given = "Lei",
@@ -7,7 +7,7 @@ Authors@R:
     role = c("aut", "cre"),
     email = "lsong@clarku.edu",
     comment = c(ORCID = "0000-0002-4371-1473"))
-Description: A package to upscale huge categorical map with area preserving method proposed by Johnson, J. Michael, and Keith C. Clarke (2021) <doi:10.1080/15230406.2021.1892531>.
+Description: Upscale huge categorical map with area preserving method proposed by Johnson, J. Michael, and Keith C. Clarke (2021) <doi:10.1080/15230406.2021.1892531>.
 License: MIT + file LICENSE
 URL: https://github.com/LLeiSong/APUpscale
 BugReports: https://github.com/LLeiSong/APUpscale/issues

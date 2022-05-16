@@ -6,7 +6,8 @@
 #' output target grid.
 #' @param no_data (integer) a value to be treated as NO_DATA. Default to NA.
 #' @param nthread (integer) the number of thread to use for parallel.
-#' Default to \code{\link{detectCores}}.
+#' Default to `NULL`. It is recommended to use small ones to
+#' take full advantage of `terra`, for instance 2, 4.
 #' @importFrom terra rast writeRaster ext crs classify res values
 #' @importFrom parallel detectCores
 #'
