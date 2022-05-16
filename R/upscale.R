@@ -8,6 +8,7 @@
 #' @param nthread (integer) the number of thread to use for parallel.
 #' Default to `NULL`. It is recommended to use small ones to
 #' take full advantage of `terra`, for instance 2, 4.
+#' @param verbose (logical) print out info for debugging.
 #' @importFrom terra rast writeRaster ext crs classify res values
 #' @importFrom parallel detectCores
 #'
@@ -23,7 +24,8 @@
 
 upscale <- function(input, cellsize,
                     no_data = NA,
-                    nthread = NULL){
+                    nthread = NULL,
+                    verbose = FALSE){
   # Check inputs
   checkmate::assert_class(input, 'SpatRaster', null.ok = FALSE)
   checkmate::assert_number(cellsize,
@@ -35,6 +37,7 @@ upscale <- function(input, cellsize,
                     cellsize))}
   checkmate::assert_number(no_data, na.ok = TRUE)
   checkmate::assert_int(nthread, null.ok = TRUE)
+  checkmate::assert_logical(verbose)
 
   # Adjust number of threads to use
   if (is.null(nthread)) nthread <- detectCores()
@@ -50,20 +53,31 @@ upscale <- function(input, cellsize,
     input <- classify(input, cbind(no_data, NA),
                       filetype = 'GTiff',
                       overwrite = TRUE,
-                      gdal = c("COMPRESS=LZW"))}
+                      gdal = c("COMPRESS=LZW"))
+    # Message
+    if (verbose) message(sprintf('Set no data to NA - %s.', Sys.time()))
+    }
+
 
   # Summarize the output cells
   target_vals <- reclass(input,
                          output = output,
-                         nthread = nthread)
+                         nthread = nthread,
+                         verbose = verbose)
   values(output) <- target_vals
+
+  # Message
+  if (verbose) message(sprintf('Upscale the map - %s.', Sys.time()))
 
   # Set NA back to no_data
   if (!is.na(no_data)) {
     output <- classify(output, cbind(NA, no_data),
                       filetype = 'GTiff',
                       overwrite = TRUE,
-                      gdal = c("COMPRESS=LZW"))}
+                      gdal = c("COMPRESS=LZW"))
+    # Message
+    if (verbose) message(sprintf('Set NA back to no data - %s.', Sys.time()))
+    }
 
   # Return
   output

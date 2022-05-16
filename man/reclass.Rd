@@ -4,7 +4,7 @@
 \alias{reclass}
 \title{Re-class the target map}
 \usage{
-reclass(input, output, nthread = NULL)
+reclass(input, output, nthread = NULL, verbose = FALSE)
 }
 \arguments{
 \item{input}{(SpatRaster) an input terra raster to resample}
@@ -12,7 +12,10 @@ reclass(input, output, nthread = NULL)
 \item{output}{(SpatRaster) the output grid to resample to}
 
 \item{nthread}{(integer) the number of thread to use for parallel.
-Default to \code{\link{detectCores}}.}
+Default to \code{NULL}. It is recommended to use small ones to
+take full advantage of \code{terra}, for instance 2, 4.}
+
+\item{verbose}{(logical) print out info for debugging.}
 }
 \value{
 (matrix) the categorical matrix of target terra raster

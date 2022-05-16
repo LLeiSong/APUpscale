@@ -5,8 +5,9 @@
 #' @param nthread (integer) the number of thread to use for parallel.
 #' Default to `NULL`. It is recommended to use small ones to
 #' take full advantage of `terra`, for instance 2, 4.
+#' @param verbose (logical) print out info for debugging.
 #' @importFrom terra resample values<- freq ncell values
-#' aggregate makeTiles free_RAM zonal
+#' aggregate makeTiles free_RAM zonal terraOptions as.polygons crop
 #' @importFrom parallel mclapply detectCores
 #' @importFrom stats na.omit
 #' @importFrom utils getFromNamespace
@@ -22,12 +23,18 @@
 #' coltab(output) <- coltab(nlcd)
 #' plot(output)
 
-reclass <- function(input, output, nthread = NULL){
+reclass <- function(input, output, nthread = NULL, verbose = FALSE){
+  # Keep terra silent
+  terraOptions(progress = 0)
+
+  # Message
+  if (verbose) message(sprintf('Start reclass - %s.', Sys.time()))
 
   # Check inputs
   checkmate::assert_class(input, 'SpatRaster', null.ok = FALSE)
   checkmate::assert_class(output, 'SpatRaster', null.ok = FALSE)
   checkmate::assert_int(nthread, null.ok = TRUE)
+  checkmate::assert_logical(verbose)
 
   # Adjust number of threads to use
   if (is.null(nthread)) nthread <- detectCores()
@@ -70,6 +77,9 @@ reclass <- function(input, output, nthread = NULL){
   count <- count[count$output_count != 0, ]
   count <- count[order(count$output_count), ]
 
+  # Message
+  if (verbose) message(sprintf('Summarize cells - %s.', Sys.time()))
+
   # Determine which input cells underlay each output object
   get_proportion <- function(x, classes) {
     if (all(is.na(x))){
@@ -90,124 +100,213 @@ reclass <- function(input, output, nthread = NULL){
                       Linux   = {mclapply},
                       Darwin  = {mclapply})
 
-  # Check memory
+  # Can work but slow
   opt <- utils::getFromNamespace("spatOptions", "terra")()
   opt$ncopies <- 1
-  mem_need <- (input@ptr$mem_needs(opt)[1] * 4) / (1024^3 / 8)
+  mem_need <- input@ptr$mem_needs(opt)[1] * 3 / (1024^3 / 8)
   mem_avail <- input@ptr$mem_needs(opt)[3] *
     input@ptr$mem_needs(opt)[2] / (1024^3 / 8)
   rm(opt)
 
   # Calculate how many tiles to make
-  num_tiles <- ceiling(mem_need / floor(mem_avail / nthread))
-  num_factor <- floor(sqrt(ncell(output) / num_tiles))
-  # The map would be too huge, just give it a try
-  if (num_factor <= 1) num_factor <- 2
+  num_tiles <- mem_need / mem_avail
 
-  # Split raster to tiles
-  temp_dir <- file.path(tempdir(), 'tiles')
-  if (!dir.exists(temp_dir)) dir.create(temp_dir)
-  template <- aggregate(output, fact = num_factor)
-  dims_out <- c(nrow(template), ncol(template))
-  output_tiles <- makeTiles(
-    output, template,
-    filename = file.path(temp_dir, 'output_.tif'))
-  input_tiles <- makeTiles(
-    input, template,
-    filename = file.path(temp_dir, 'input_.tif'))
-  rm(num_tiles, num_factor, mem_need, mem_avail)
-  rm(input, output, template); free_RAM(); gc()
+  if (num_tiles < 0.5) {
+    # Message
+    if (verbose) message(sprintf('Take whole image to process - %s.',
+                                 Sys.time()))
 
-  # Calculate
-  areal_per <- mclapply(1:length(output_tiles), function(n) {
-    # # Overlay the base and target map
-    base_map <- rast(input_tiles[n])
-    zones <- rast(output_tiles[n])
-    n_row <- nrow(zones); n_col <- ncol(zones)
-    values(zones) <- 1:ncell(zones)
+    # Overlay the base and target map
+    zones <- output; values(zones) <- 1:ncell(zones)
     fname <- tempfile(fileext = '.tif')
-    zones <- resample(zones, base_map, method = 'near',
+    zones <- resample(zones, input, method = 'near',
                       filename = fname,
                       wopt = list(gdal=c("COMPRESS=LZW")))
-    cn <- zonal(base_map, zones, fun = function(x) list(x))
+    cn <- zonal(input, zones, fun = function(x) list(x))
     names(cn) <- c('id', 'input')
-    file.remove(fname); rm(zones, fname, base_map)
+    file.remove(fname); rm(zones, fname)
+
+    # Group by Output object and cell value, count, and determine percentage
+    areal_per <- do.call(
+      rbind, lapply(1:nrow(cn), function(n) {
+          props <- get_proportion(cn[[n, 'input']], count$value)
+          dt <- data.frame(t(props))
+          names(dt) <- count$value
+          dt$id <- n
+          dt[, c('id', count$value)]
+      })); rm(cn)
+
+    # Re-class the target pixels
+    ## Fill all cells with 100% of one class with that class
+    inds <- apply(areal_per[, -1] == 10000, 1, match, x = TRUE)
+    areal_per$cat <- count$value[inds]; rm(inds)
+
+    # Pick pixels in target map for classes
+    for (class_id in count$value) {
+      # Calculate the number of remaining pixels to assign
+      num_to_fill <- count[count$value == class_id, 'output_count'] -
+        sum(na.omit(areal_per$cat) == class_id)
+      # In case more than output_count pixels have been assigned
+      if (num_to_fill < 0) num_to_fill <- 0
+
+      # Get the column of this class
+      per_this_class <- areal_per[[as.character(class_id)]]
+      # Remove pixels that have assigned class already
+      per_this_class[which(!is.na(areal_per$cat))] <- NA
+      # Remove pixels with less than 10% to be this class
+      # to reduce calculation
+      per_this_class[per_this_class <= 1000] <- NA
+
+      # Pick up num_to_fill of pixels with the most coverage to assign class
+      num_to_fill <- min(num_to_fill, sum(!is.na(per_this_class)))
+      if (num_to_fill > 0) {
+        inds_to_fill <- order(per_this_class, decreasing = T)[1:num_to_fill]
+        areal_per$cat[inds_to_fill]= as.integer(class_id)}
+    }
+
+    # If a cell is unassigned, implement a majority rule
+    areal_per$cat <- ifelse(
+      is.na(areal_per$cat) &
+        !rowSums(is.na(areal_per[, -c(1, ncol(areal_per))])) ==
+        ncol(areal_per[, -c(1, ncol(areal_per))]),
+      as.numeric(colnames(areal_per[, -c(1, ncol(areal_per))])[
+        unlist(sapply(apply(areal_per[, -c(1, ncol(areal_per))], 1, which.max),
+                      function(x) unname(x[1])))]),
+      as.numeric(areal_per$cat))
+
+    # Clean up
+    rm(num_to_fill, per_this_class, inds_to_fill)
+
+    matrix(areal_per$cat, nrow = nrow(output),
+           ncol = ncol(output), byrow = TRUE)
+
+  } else {
+    # Message
+    if (verbose) message(sprintf('Use chunks for large image - %s.',
+                                 Sys.time()))
+
+    num_tiles <- ceiling(num_tiles)
+    num_factor <- floor(sqrt(ncell(output) / num_tiles))
+    # The map would be too huge, just give it a try
+    if (num_factor <= 1) num_factor <- 2
+
+    # Cut images to chunks
+    temp_dir <- file.path(tempdir(), 'tiles')
+    if (!dir.exists(temp_dir)) dir.create(temp_dir)
+    template <- aggregate(output, fact = num_factor)
+    dims_out <- c(nrow(template), ncol(template))
+    output_tiles <- makeTiles(
+      output, template,
+      filename = file.path(temp_dir, 'output_.tif'))
+    input_tiles <- makeTiles(
+      input, template,
+      filename = file.path(temp_dir, 'input_.tif'))
+    rm(num_tiles, num_factor, mem_need, mem_avail)
+    rm(input, output, template); free_RAM(); gc()
+
+    # Message
+    if (verbose) message(sprintf('Cut image to chunks - %s.', Sys.time()))
+
+    # Calculate
+    areal_per <- lapply(1:length(output_tiles), function(n) {
+      # Message
+      if (verbose) message(sprintf('Chunk %s of %s - %s.',
+                                   n, length(output_tiles), Sys.time()))
+
+      # Overlay the base and target map
+      zones <- rast(output_tiles[n])
+      n_row <- nrow(zones); n_col <- ncol(zones)
+      values(zones) <- 1:ncell(zones)
+      zones <- as.polygons(zones)
+      areal_per_blk <- do.call(rbind, mclapply(1:nrow(zones), function(m) {
+        props <- get_proportion(
+          values(crop(rast(input_tiles[n]),
+                      zones[m, ], snap = 'out')),
+          count$value)
+        dt <- data.frame(t(props))
+        names(dt) <- count$value
+        dt$id <- m
+        dt[, c('id', count$value)]
+      }, mc.cores = min(nrow(zones), nthread)))
+
+      # Return
+      inds <- apply(areal_per_blk[, -1] == 10000, 1, match, x = TRUE)
+      areal_per_blk$cat <- count$value[inds]; rm(inds)
+      list(areal_per_blk, c(n_row, n_col))
+    })
+
+    # Get the ncell of each tile and rbind all pixels together
+    ncell_tiles <- sapply(areal_per, function(x) nrow(x[[1]]))
+    groups <- seq_along(ncell_tiles)
+    groups <- unlist(lapply(seq_along(ncell_tiles), function(n) {
+      rep(groups[n], ncell_tiles[n])}))
+    n_row_cols <- mclapply(areal_per, function(x) x[[2]],
+                           mc.cores = min(length(areal_per), nthread))
+    areal_per <- do.call(
+      rbind, mclapply(areal_per, function(x) x[[1]],
+                      mc.cores = min(length(areal_per), nthread)))
+    ids_in_group <- split(1:nrow(areal_per), groups)
+    rm(ncell_tiles, groups)
+
+    # Pick pixels in target map for classes
+    for (class_id in count$value) {
+      # Calculate the number of remaining pixels to assign
+      num_to_fill <- count[count$value == class_id, 'output_count'] -
+        sum(na.omit(areal_per$cat) == class_id)
+      # In case more than output_count pixels have been assigned
+      if (num_to_fill < 0) num_to_fill <- 0
+
+      # Get the column of this class
+      per_this_class <- areal_per[[as.character(class_id)]]
+      # Remove pixels that have assigned class already
+      per_this_class[which(!is.na(areal_per$cat))] <- NA
+      # Remove pixels with less than 10% to be this class
+      # to reduce calculation
+      per_this_class[per_this_class <= 1000] <- NA
+
+      # Pick up num_to_fill of pixels with the most coverage to assign class
+      num_to_fill <- min(num_to_fill, sum(!is.na(per_this_class)))
+      if (num_to_fill > 0) {
+        inds_to_fill <- order(per_this_class, decreasing = T)[1:num_to_fill]
+        areal_per$cat[inds_to_fill]= as.integer(class_id)}
+    }
+
+    # If a cell is unassigned, implement a majority rule
+    areal_per$cat <- ifelse(
+      is.na(areal_per$cat) &
+        !rowSums(is.na(areal_per[, -c(1, ncol(areal_per))])) ==
+        ncol(areal_per[, -c(1, ncol(areal_per))]),
+      as.numeric(colnames(areal_per[, -c(1, ncol(areal_per))])[
+        unlist(sapply(apply(areal_per[, -c(1, ncol(areal_per))], 1, which.max),
+                      function(x) unname(x[1])))]),
+      as.numeric(areal_per$cat))
+
+    # Clean up
+    rm(num_to_fill, per_this_class, inds_to_fill)
     free_RAM(); gc()
 
-    areal_per_blk <- do.call(rbind, mclapply(1:nrow(cn), function(n) {
-      props <- get_proportion(cn[[n, 'input']], count$value)
-      dt <- data.frame(t(props))
-      names(dt) <- count$value
-      dt$id <- cn[n, ]$id
-      dt[, c('id', count$value)]
-    }, mc.cores = nthread))
+    # Message
+    if (verbose) message(sprintf("Reassign values - %s.", Sys.time()))
 
-    inds <- apply(areal_per_blk[, -1] == 10000, 1, match, x = TRUE)
-    areal_per_blk$cat <- count$value[inds]; rm(inds)
-    list(areal_per_blk, c(n_row, n_col))
-  }, mc.cores = min(length(output_tiles), nthread))
+    # Reshape the result to tiles
+    target_cats <- mclapply(seq_along(ids_in_group), function(n) {
+      inds <- ids_in_group[[n]]
+      n_row <- n_row_cols[[n]][1]
+      n_col <- n_row_cols[[n]][2]
+      matrix(areal_per$cat[inds], nrow = n_row, ncol = n_col, byrow = TRUE)
+    }, mc.cores = min(length(ids_in_group), nthread))
+    rm(areal_per, ids_in_group, n_row_cols)
+    unlink(temp_dir, recursive = TRUE)
 
-  # Get the ncell of each tile and rbind all pixels together
-  ncell_tiles <- sapply(areal_per, function(x) nrow(x[[1]]))
-  groups <- letters[seq_along(ncell_tiles)]
-  groups <- unlist(lapply(seq_along(ncell_tiles), function(n) {
-    rep(groups[n], ncell_tiles[n])}))
-  n_row_cols <- lapply(areal_per, function(x) x[[2]])
-  areal_per <- do.call(
-    rbind, lapply(areal_per, function(x) x[[1]]))
-  ids_in_group <- split(1:nrow(areal_per), groups)
-  rm(ncell_tiles, groups)
+    # Message
+    if (verbose) message(sprintf('Reshape the matrix - %s.', Sys.time()))
 
-  # Pick pixels in target map for classes
-  for (class_id in count$value) {
-    # Calculate the number of remaining pixels to assign
-    num_to_fill <- count[count$value == class_id, 'output_count'] -
-      sum(na.omit(areal_per$cat) == class_id)
-    # In case more than output_count pixels have been assigned
-    if (num_to_fill < 0) num_to_fill <- 0
-
-    # Get the column of this class
-    per_this_class <- areal_per[[as.character(class_id)]]
-    # Remove pixels that have assigned class already
-    per_this_class[which(!is.na(areal_per$cat))] <- NA
-    # Remove pixels with less than 10% to be this class
-    # to reduce calculation
-    per_this_class[per_this_class <= 1000] <- NA
-
-    # Pick up num_to_fill of pixels with the most coverage to assign class
-    num_to_fill <- min(num_to_fill, sum(!is.na(per_this_class)))
-    if (num_to_fill > 0) {
-      inds_to_fill <- order(per_this_class, decreasing = T)[1:num_to_fill]
-      areal_per$cat[inds_to_fill]= as.integer(class_id)}
+    # Mosaic the matrices
+    ids_to_rbind <- 1:length(target_cats) %% dims_out[2]
+    do.call(cbind, mclapply(unique(ids_to_rbind), function(n) {
+      do.call(rbind, target_cats[which(ids_to_rbind == n)])
+    }, mc.cores = min(length(unique(ids_to_rbind)), nthread)))
   }
-
-  # If a cell is unassigned, implement a majority rule
-  areal_per$cat <- ifelse(
-    is.na(areal_per$cat) &
-      !is.na(rowSums(areal_per[, -c(1, ncol(areal_per))])),
-         as.numeric(colnames(areal_per[, -c(1, ncol(areal_per))])[
-           apply(areal_per[, -c(1, ncol(areal_per))], 1, which.max)]),
-         as.numeric(areal_per$cat))
-
-  # Clean up
-  rm(num_to_fill, per_this_class, inds_to_fill)
-  free_RAM(); gc()
-
-  # Reshape the result to tiles
-  target_cats <- mclapply(seq_along(ids_in_group), function(n) {
-    inds <- ids_in_group[[n]]
-    n_row <- n_row_cols[[n]][1]
-    n_col <- n_row_cols[[n]][2]
-    matrix(areal_per$cat[inds], nrow = n_row, ncol = n_col, byrow = TRUE)
-  }, mc.cores = min(length(ids_in_group), nthread))
-  rm(areal_per, ids_in_group, n_row_cols)
-  unlink(temp_dir, recursive = TRUE)
-
-  # Mosaic the matrices
-  ids_to_rbind <- 1:length(target_cats) %% dims_out[2]
-  do.call(cbind, mclapply(unique(ids_to_rbind), function(n) {
-    do.call(rbind, target_cats[which(ids_to_rbind == n)])
-  }, mc.cores = min(length(unique(ids_to_rbind)), nthread)))
 }
 
 # end reclass

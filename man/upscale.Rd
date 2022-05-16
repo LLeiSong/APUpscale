@@ -4,7 +4,7 @@
 \alias{upscale}
 \title{upscale}
 \usage{
-upscale(input, cellsize, no_data = NA, nthread = NULL)
+upscale(input, cellsize, no_data = NA, nthread = NULL, verbose = FALSE)
 }
 \arguments{
 \item{input}{(SpatRaster) a terra raster with fine resolution}
@@ -15,7 +15,10 @@ output target grid.}
 \item{no_data}{(integer) a value to be treated as NO_DATA. Default to NA.}
 
 \item{nthread}{(integer) the number of thread to use for parallel.
-Default to \code{\link{detectCores}}.}
+Default to \code{NULL}. It is recommended to use small ones to
+take full advantage of \code{terra}, for instance 2, 4.}
+
+\item{verbose}{(logical) print out info for debugging.}
 }
 \value{
 (SpatRaster) a resampled terra raster
