@@ -53,6 +53,7 @@ upscale <- function(input, cellsize,
     input <- classify(input, cbind(no_data, NA),
                       filetype = 'GTiff',
                       overwrite = TRUE,
+                      datatype = "INT4U",
                       gdal = c("COMPRESS=LZW"))
     # Message
     if (verbose) message(sprintf('Set no data to NA - %s.', Sys.time()))
@@ -74,6 +75,7 @@ upscale <- function(input, cellsize,
     output <- classify(output, cbind(NA, no_data),
                       filetype = 'GTiff',
                       overwrite = TRUE,
+                      datatype = "INT4U",
                       gdal = c("COMPRESS=LZW"))
     # Message
     if (verbose) message(sprintf('Set NA back to no data - %s.', Sys.time()))

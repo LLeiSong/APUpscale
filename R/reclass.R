@@ -7,8 +7,9 @@
 #' take full advantage of `terra`, for instance 2, 4.
 #' @param verbose (logical) print out info for debugging.
 #' @importFrom terra resample values<- freq ncell values
-#' aggregate makeTiles free_RAM zonal terraOptions as.polygons crop
+#' aggregate makeTiles free_RAM terraOptions zonal
 #' @importFrom parallel mclapply detectCores
+#' @importFrom collapse BY GRP fsubset
 #' @importFrom stats na.omit
 #' @importFrom utils getFromNamespace
 #' @return (matrix) the categorical matrix of target terra raster
@@ -53,6 +54,7 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
   fname <- tempfile(fileext = '.tif')
   num_vals_output <- freq(resample(input, output, method = 'near',
                                    filename = fname, overwrite = TRUE,
+                                   datatype = "INT4U",
                                    wopt = list(gdal=c("COMPRESS=LZW"))),
                           value = NA)[[1, 'count']]
   file.remove(fname)
@@ -71,7 +73,7 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
                   decreasing = TRUE)[1:n_left]
     count$output_count[inds] = count$output_count[inds] + 1
     n_left <- ncell(output) - num_vals_output - sum(count$output_count)
-  }; rm(n_left, inds, fname)
+  }; rm(n_left, inds, fname, num_vals_output)
 
   # Sort and remove classes with 0 needed cells
   count <- count[count$output_count != 0, ]
@@ -104,6 +106,8 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
   opt <- utils::getFromNamespace("spatOptions", "terra")()
   opt$ncopies <- 1
   mem_need <- input@ptr$mem_needs(opt)[1] * 3 / (1024^3 / 8)
+  mem_need <- (input@ptr$mem_needs(opt)[1] + 
+                   output@ptr$mem_needs(opt)[1]) * 3 / (1024^3 / 10)
   mem_avail <- input@ptr$mem_needs(opt)[3] *
     input@ptr$mem_needs(opt)[2] / (1024^3 / 8)
   rm(opt)
@@ -120,7 +124,7 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
     zones <- output; values(zones) <- 1:ncell(zones)
     fname <- tempfile(fileext = '.tif')
     zones <- resample(zones, input, method = 'near',
-                      filename = fname,
+                      filename = fname, datatype = "INT4U",
                       wopt = list(gdal=c("COMPRESS=LZW")))
     cn <- zonal(input, zones, fun = function(x) list(x))
     names(cn) <- c('id', 'input')
@@ -209,30 +213,68 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
 
     # Calculate
     areal_per <- lapply(1:length(output_tiles), function(n) {
-      # Message
-      if (verbose) message(sprintf('Chunk %s of %s - %s.',
-                                   n, length(output_tiles), Sys.time()))
-
-      # Overlay the base and target map
-      zones <- rast(output_tiles[n])
-      n_row <- nrow(zones); n_col <- ncol(zones)
-      values(zones) <- 1:ncell(zones)
-      zones <- as.polygons(zones)
-      areal_per_blk <- do.call(rbind, mclapply(1:nrow(zones), function(m) {
-        props <- get_proportion(
-          values(crop(rast(input_tiles[n]),
-                      zones[m, ], snap = 'out')),
-          count$value)
-        dt <- data.frame(t(props))
-        names(dt) <- count$value
-        dt$id <- m
-        dt[, c('id', count$value)]
-      }, mc.cores = min(nrow(zones), nthread)))
-
-      # Return
-      inds <- apply(areal_per_blk[, -1] == 10000, 1, match, x = TRUE)
-      areal_per_blk$cat <- count$value[inds]; rm(inds)
-      list(areal_per_blk, c(n_row, n_col))
+        # Message
+        if (verbose) message(sprintf('Chunk %s of %s - %s.',
+                                     n, length(output_tiles), Sys.time()))
+        
+        # Overlay the base and target map
+        zones <- rast(output_tiles[n])
+        n_row <- nrow(zones); n_col <- ncol(zones)
+        values(zones) <- 1:ncell(zones)
+        chunk <- rast(input_tiles[n])
+        fname <- tempfile(fileext = '.tif')
+        zones <- resample(zones, chunk, method = 'near',
+                          filename = fname, 
+                          overwrite = TRUE,
+                          datatype = "INT4U",
+                          gdal = c("COMPRESS=LZW"))
+        vals <- values(c(chunk, zones))
+        rm(zones, chunk); file.remove(fname); free_RAM()
+        colnames(vals) <- c('cats', 'groups')
+        if (any(is.na(vals[, 'groups']))){
+            vals <- fsubset(vals, !is.na(vals[, 'groups']))
+        }
+        # areal_per_blk <- BY(vals[, 'cats'], GRP(vals[, 'groups']), 
+        #                     FUN = function(x) {
+        #                         props <- get_proportion(x, count$value)
+        #                         dt <- data.frame(t(props))
+        #                         names(dt) <- count$value
+        #                         dt
+        #                     }, expand.wide = TRUE)
+        num_split <- ceiling(n_row * n_col / nthread)
+        fnames <- file.path(tempdir(), sprintf('tmp_mat_%s.rda', 1:nthread))
+        n_to_select <- num_split
+        for (i in 1:nthread) {
+            if (i == nthread) {
+                vals_temp <- vals
+                save(vals_temp, file = fnames[i])
+            } else {
+                vals_temp <- fsubset(vals, vals[, 'groups'] <= n_to_select)
+                vals <- fsubset(vals, vals[, 'groups'] > n_to_select)
+                save(vals_temp, file = fnames[i])
+            }
+            n_to_select <- n_to_select + num_split
+            rm(vals_temp)
+        }; rm(vals); gc()
+        
+        areal_per_blk <- do.call(rbind, mclapply(fnames, function(fname) {
+            load(fname)
+            BY(vals_temp[, 'cats'], GRP(vals_temp[, 'groups']), 
+               FUN = function(x) {
+                   props <- get_proportion(x, count$value)
+                   dt <- data.frame(t(props))
+                   names(dt) <- count$value
+                   dt
+               }, expand.wide = TRUE)
+        }, mc.cores = nthread))
+        file.remove(fnames); gc()
+        
+        # Return
+        inds <- apply(areal_per_blk == 10000, 1, match, x = TRUE)
+        areal_per_blk$id <- 1:c(n_row * n_col)
+        areal_per_blk <- areal_per_blk[, c('id', count$value)]
+        areal_per_blk$cat <- count$value[inds]; rm(inds)
+        list(areal_per_blk, c(n_row, n_col))
     })
 
     # Get the ncell of each tile and rbind all pixels together
