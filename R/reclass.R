@@ -54,7 +54,6 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
   fname <- tempfile(fileext = '.tif')
   num_vals_output <- freq(resample(input, output, method = 'near',
                                    filename = fname, overwrite = TRUE,
-                                   datatype = "INT4U",
                                    wopt = list(gdal=c("COMPRESS=LZW"))),
                           value = NA)[[1, 'count']]
   file.remove(fname)
@@ -122,13 +121,11 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
 
     # Overlay the base and target map
     zones <- output; values(zones) <- 1:ncell(zones)
-    fname <- tempfile(fileext = '.tif')
     zones <- resample(zones, input, method = 'near',
-                      filename = fname, datatype = "INT4U",
                       wopt = list(gdal=c("COMPRESS=LZW")))
     cn <- zonal(input, zones, fun = function(x) list(x))
     names(cn) <- c('id', 'input')
-    file.remove(fname); rm(zones, fname)
+    rm(zones)
 
     # Group by Output object and cell value, count, and determine percentage
     areal_per <- do.call(
@@ -223,6 +220,9 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
         values(zones) <- 1:ncell(zones)
         chunk <- rast(input_tiles[n])
         fname <- tempfile(fileext = '.tif')
+        # Because zones is not Byte, 
+        # so there is no issue for NA conflicts
+        # INT4U is the maximum value in base R to handle.
         zones <- resample(zones, chunk, method = 'near',
                           filename = fname, 
                           overwrite = TRUE,
