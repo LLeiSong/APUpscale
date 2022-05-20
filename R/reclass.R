@@ -126,6 +126,7 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
     cn <- zonal(input, zones, fun = function(x) list(x))
     names(cn) <- c('id', 'input')
     rm(zones)
+    cn <- cn[cn$id == 0, ]
 
     # Group by Output object and cell value, count, and determine percentage
     areal_per <- do.call(
@@ -220,9 +221,6 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
         values(zones) <- 1:ncell(zones)
         chunk <- rast(input_tiles[n])
         fname <- tempfile(fileext = '.tif')
-        # Because zones is not Byte, 
-        # so there is no issue for NA conflicts
-        # INT4U is the maximum value in base R to handle.
         zones <- resample(zones, chunk, method = 'near',
                           filename = fname, 
                           overwrite = TRUE,
@@ -232,8 +230,8 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
         rm(zones, chunk); file.remove(fname); free_RAM()
         colnames(vals) <- c('cats', 'groups')
         if (any(is.na(vals[, 'groups']))){
-            vals <- fsubset(vals, !is.na(vals[, 'groups']))
-        }
+            vals <- fsubset(vals, !is.na(vals[, 'groups']))}
+        vals <- fsubset(vals, vals[, 'groups'] != 0)
         # areal_per_blk <- BY(vals[, 'cats'], GRP(vals[, 'groups']), 
         #                     FUN = function(x) {
         #                         props <- get_proportion(x, count$value)
