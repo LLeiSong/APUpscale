@@ -118,12 +118,14 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
 
     # Overlay the base and target map
     zones <- output; values(zones) <- 1:ncell(zones)
+    fname <- tempfile(fileext = '.tif')
     zones <- resample(zones, input, method = 'near',
+                      filename = fname, datatype = 'INT4U',
                       wopt = list(gdal=c("COMPRESS=LZW")))
     cn <- zonal(input, zones, fun = function(x) list(x))
     names(cn) <- c('id', 'input')
-    rm(zones)
-    cn <- cn[cn$id == 0, ]
+    file.remove(fname); rm(zones, fname)
+    cn <- cn[cn$id != 0, ]
 
     # Group by Output object and cell value, count, and determine percentage
     areal_per <- do.call(

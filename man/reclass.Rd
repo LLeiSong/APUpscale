@@ -11,11 +11,10 @@ reclass(input, output, nthread = NULL, verbose = FALSE)
 
 \item{output}{(SpatRaster) the output grid to resample to}
 
-\item{nthread}{(integer) the number of thread to use for parallel.
-Default to \code{NULL}. It is recommended to use small ones to
-take full advantage of \code{terra}, for instance 2, 4.}
+\item{nthread}{(integer) the number of thread to use for parallel. If \code{NULL},
+the all available cores in the machine will be used. Default to \code{NULL}.}
 
-\item{verbose}{(logical) print out info for debugging.}
+\item{verbose}{(logical) option to print out info for debugging.}
 }
 \value{
 (matrix) the categorical matrix of target terra raster

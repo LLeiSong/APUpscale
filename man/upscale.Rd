@@ -10,15 +10,14 @@ upscale(input, cellsize, no_data = NA, nthread = NULL, verbose = FALSE)
 \item{input}{(SpatRaster) a terra raster with fine resolution}
 
 \item{cellsize}{(numeric) cell resolution in units of input CRS of
-output target grid.}
+output target grid. The value should be always larger than input resolution.}
 
 \item{no_data}{(integer) a value to be treated as NO_DATA. Default to NA.}
 
-\item{nthread}{(integer) the number of thread to use for parallel.
-Default to \code{NULL}. It is recommended to use small ones to
-take full advantage of \code{terra}, for instance 2, 4.}
+\item{nthread}{(integer) the number of thread to use for parallel. If \code{NULL},
+the all available cores in the machine will be used. Default to \code{NULL}.}
 
-\item{verbose}{(logical) print out info for debugging.}
+\item{verbose}{(logical) option to print out info for debugging.}
 }
 \value{
 (SpatRaster) a resampled terra raster
