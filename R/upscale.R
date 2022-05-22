@@ -3,12 +3,11 @@
 #' using an area preserving method
 #' @param input (SpatRaster) a terra raster with fine resolution
 #' @param cellsize (numeric) cell resolution in units of input CRS of
-#' output target grid.
+#' output target grid. The value should be always larger than input resolution.
 #' @param no_data (integer) a value to be treated as NO_DATA. Default to NA.
-#' @param nthread (integer) the number of thread to use for parallel.
-#' Default to `NULL`. It is recommended to use small ones to
-#' take full advantage of `terra`, for instance 2, 4.
-#' @param verbose (logical) print out info for debugging.
+#' @param nthread (integer) the number of thread to use for parallel. If `NULL`,
+#' the all available cores in the machine will be used. Default to `NULL`.
+#' @param verbose (logical) option to print out info for debugging.
 #' @importFrom terra rast writeRaster ext crs classify res values
 #' @importFrom parallel detectCores
 #'

@@ -7,9 +7,9 @@
 The package provides a workable way to upscale huge categorical map using area preserving method. It can ensure both the compositional information and landscape characteristics. It does the calculation in two ways:
 
 - If the base map is small enough in terms of machine RAM, it relies on `terra::zonal` 'to summarise cells.
-- If the base map is way large than machine RAM, it will cut the base map into chunks. And for each chunk, it loops on each cell of target map in parallel to summarise cells.
+- If the base map is way large than machine RAM, it will cut the base map into chunks. And for each chunk, it converts rasters to matrix and do grouping aggregation taking advantage of both base R and package `collapse`. In order to avoid RAM crash, it uses a conservative way to deal with RAM.
 
-*NOTE:* For a moderate size map, it might be less efficient. And you can try the original package [resample](https://github.com/mikejohnson51/resample).
+*NOTE:* For a moderate size map, it might be less efficient. And if the base map is large and the upscale factor is small (e.g. upscaling 4m to 30m), it might be very slow but still workable.
 
 ## Installation
 You can install the development version from GitHub with:

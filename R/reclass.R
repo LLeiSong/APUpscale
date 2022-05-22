@@ -2,10 +2,9 @@
 #' @description re-class the base map to the target map
 #' @param input (SpatRaster) an input terra raster to resample
 #' @param output (SpatRaster) the output grid to resample to
-#' @param nthread (integer) the number of thread to use for parallel.
-#' Default to `NULL`. It is recommended to use small ones to
-#' take full advantage of `terra`, for instance 2, 4.
-#' @param verbose (logical) print out info for debugging.
+#' @param nthread (integer) the number of thread to use for parallel. If `NULL`,
+#' the all available cores in the machine will be used. Default to `NULL`.
+#' @param verbose (logical) option to print out info for debugging.
 #' @importFrom terra resample values<- freq ncell values
 #' aggregate makeTiles free_RAM terraOptions zonal
 #' @importFrom parallel mclapply detectCores
@@ -104,9 +103,7 @@ reclass <- function(input, output, nthread = NULL, verbose = FALSE){
   # Can work but slow
   opt <- utils::getFromNamespace("spatOptions", "terra")()
   opt$ncopies <- 1
-  mem_need <- input@ptr$mem_needs(opt)[1] * 3 / (1024^3 / 8)
-  mem_need <- (input@ptr$mem_needs(opt)[1] + 
-                   output@ptr$mem_needs(opt)[1]) * 3 / (1024^3 / 10)
+  mem_need <- (input@ptr$mem_needs(opt)[1] * 2) * 3 / (1024^3 / 10)
   mem_avail <- input@ptr$mem_needs(opt)[3] *
     input@ptr$mem_needs(opt)[2] / (1024^3 / 8)
   rm(opt)
